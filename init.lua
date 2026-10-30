@@ -92,6 +92,9 @@ do
   -- Enable faster startup by caching compiled Lua modules
   vim.loader.enable()
 
+  local python3 = vim.fn.exepath 'python3'
+  if python3 ~= '' then vim.g.python3_host_prog = python3 end
+
   -- Set <space> as the leader key
   -- See `:help mapleader`
   --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
@@ -126,6 +129,18 @@ do
 
   -- Enable break indent
   vim.o.breakindent = true
+
+  -- Use four spaces for indentation
+  vim.o.expandtab = true
+  vim.o.shiftwidth = 4
+  vim.o.softtabstop = 4
+  vim.o.tabstop = 4
+
+  -- Mark the maximum preferred line length
+  vim.o.colorcolumn = '100'
+  vim.api.nvim_create_autocmd('ColorScheme', {
+    callback = function() vim.api.nvim_set_hl(0, 'ColorColumn', { bg = '#5c2020' }) end,
+  })
 
   -- Enable undo/redo changes even after closing and reopening a file
   vim.o.undofile = true
@@ -310,6 +325,12 @@ do
         return
       end
 
+      if name == 'molten-nvim' then
+        if not ev.data.active then vim.cmd.packadd 'molten-nvim' end
+        vim.cmd.UpdateRemotePlugins()
+        return
+      end
+
       if name == 'nvim-treesitter' then
         if not ev.data.active then vim.cmd.packadd 'nvim-treesitter' end
         vim.cmd 'TSUpdate'
@@ -344,7 +365,7 @@ do
   -- We first install it from https://github.com/NMAC427/guess-indent.nvim
   -- and then call its `setup()` function to start it with default settings.
   vim.pack.add { gh 'NMAC427/guess-indent.nvim' }
-  require('guess-indent').setup {}
+  require('guess-indent').setup { auto_cmd = false }
 
   -- Here is a more advanced configuration example that passes options to `gitsigns.nvim`
   --
@@ -784,6 +805,7 @@ do
     gh 'mason-org/mason.nvim',
     gh 'mason-org/mason-lspconfig.nvim',
     gh 'WhoIsSethDaniel/mason-tool-installer.nvim',
+    gh 'mfussenegger/nvim-jdtls',
   }
 
   -- Automatically install LSPs and related tools to stdpath for Neovim
@@ -803,7 +825,8 @@ do
   -- You can press `g?` for help in this menu.
   local ensure_installed = vim.tbl_keys(servers or {})
   vim.list_extend(ensure_installed, {
-    -- You can add other tools here that you want Mason to install
+    'jdtls',
+    'rust-analyzer',
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -812,6 +835,56 @@ do
     vim.lsp.config(name, server)
     vim.lsp.enable(name)
   end
+
+  local java_runtime_available
+  vim.api.nvim_create_autocmd('FileType', {
+    group = vim.api.nvim_create_augroup('kickstart-java', { clear = true }),
+    pattern = 'java',
+    callback = function()
+      if java_runtime_available == nil then java_runtime_available = vim.system({ 'java', '-version' }, { text = true }):wait().code == 0 end
+      if not java_runtime_available then
+        vim.notify('JDTLS requires a working JDK 21 or newer on PATH', vim.log.levels.ERROR)
+        return
+      end
+
+      local jdtls = require 'jdtls'
+      local root_dir = jdtls.setup.find_root {
+        'gradlew',
+        'mvnw',
+        'pom.xml',
+        'build.gradle',
+        'build.gradle.kts',
+        'settings.gradle',
+        'settings.gradle.kts',
+        '.git',
+      }
+      if not root_dir then return end
+
+      jdtls.start_or_attach {
+        cmd = { 'jdtls' },
+        root_dir = root_dir,
+        capabilities = require('blink.cmp').get_lsp_capabilities(),
+        on_attach = function(_, bufnr)
+          jdtls.setup.add_commands()
+          vim.keymap.set('n', '<leader>jo', jdtls.organize_imports, { buffer = bufnr, desc = 'Java: Organize imports' })
+          vim.keymap.set('n', '<leader>jv', jdtls.extract_variable, { buffer = bufnr, desc = 'Java: Extract variable' })
+          vim.keymap.set('n', '<leader>jc', jdtls.extract_constant, { buffer = bufnr, desc = 'Java: Extract constant' })
+          vim.keymap.set('x', '<leader>jv', '<Esc><Cmd>lua require("jdtls").extract_variable(true)<CR>', {
+            buffer = bufnr,
+            desc = 'Java: Extract selected variable',
+          })
+          vim.keymap.set('x', '<leader>jc', '<Esc><Cmd>lua require("jdtls").extract_constant(true)<CR>', {
+            buffer = bufnr,
+            desc = 'Java: Extract selected constant',
+          })
+          vim.keymap.set('x', '<leader>jm', '<Esc><Cmd>lua require("jdtls").extract_method(true)<CR>', {
+            buffer = bufnr,
+            desc = 'Java: Extract selected method',
+          })
+        end,
+      }
+    end,
+  })
 end
 
 -- ============================================================
@@ -915,7 +988,7 @@ do
     },
 
     sources = {
-      default = { 'lsp', 'path', 'snippets' },
+      default = { 'lsp', 'path', 'snippets', 'buffer' },
     },
 
     snippets = { preset = 'luasnip' },
@@ -948,8 +1021,11 @@ do
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
 
   -- Ensure basic parsers are installed
-  local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+  local parsers = { 'bash', 'c', 'diff', 'html', 'java', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'python', 'query', 'rust', 'vim', 'vimdoc' }
   require('nvim-treesitter').install(parsers)
+
+  vim.pack.add { gh 'MeanderingProgrammer/render-markdown.nvim' }
+  require('render-markdown').setup {}
 
   ---@param buf integer
   ---@param language string
@@ -1001,6 +1077,108 @@ do
 end
 
 -- ============================================================
+-- CSV VIEW
+-- Render CSV and TSV files as aligned tables while keeping them editable
+-- ============================================================
+do
+  vim.filetype.add { extension = { csv = 'csv', tsv = 'tsv' } }
+  vim.pack.add { gh 'hat0uma/csvview.nvim' }
+  require('csvview').setup {
+    view = {
+      display_mode = 'border',
+      sticky_header = { enabled = true },
+    },
+    keymaps = {
+      textobject_field_inner = { 'if', mode = { 'o', 'x' } },
+      textobject_field_outer = { 'af', mode = { 'o', 'x' } },
+      jump_next_field_end = { '<Tab>', mode = { 'n', 'v' } },
+      jump_prev_field_end = { '<S-Tab>', mode = { 'n', 'v' } },
+      jump_next_row = { '<Enter>', mode = { 'n', 'v' } },
+      jump_prev_row = { '<S-Enter>', mode = { 'n', 'v' } },
+    },
+  }
+
+  vim.api.nvim_create_autocmd('BufReadPost', {
+    group = vim.api.nvim_create_augroup('kickstart-csvview', { clear = true }),
+    pattern = { '*.csv', '*.tsv' },
+    callback = function(event)
+      vim.api.nvim_buf_call(event.buf, function()
+        vim.cmd.CsvViewEnable()
+        vim.keymap.set('n', '<leader>cv', '<Cmd>CsvViewToggle<CR>', { buffer = event.buf, desc = 'CSV: Toggle table view' })
+      end)
+    end,
+  })
+end
+
+-- ============================================================
+-- JUPYTER NOTEBOOKS
+-- Edit .ipynb files as Markdown and run cells with Molten
+-- ============================================================
+do
+  vim.g.molten_auto_open_output = false
+  vim.g.molten_virt_text_output = true
+  vim.g.molten_virt_lines_off_by_1 = true
+  vim.g.molten_wrap_output = true
+
+  vim.pack.add {
+    { src = gh 'benlubas/molten-nvim', version = vim.version.range '1.*' },
+    gh 'GCBallesteros/jupytext.nvim',
+  }
+
+  require('jupytext').setup {
+    style = 'markdown',
+    output_extension = 'md',
+    force_ft = 'markdown',
+  }
+
+  vim.keymap.set('n', '<localleader>mi', '<Cmd>MoltenInit<CR>', { desc = 'Notebook: Choose kernel' })
+  vim.keymap.set('n', '<localleader>e', '<Cmd>MoltenEvaluateOperator<CR>', { desc = 'Notebook: Evaluate motion', silent = true })
+  vim.keymap.set('x', '<localleader>r', ':<C-u>MoltenEvaluateVisual<CR>gv', { desc = 'Notebook: Evaluate selection', silent = true })
+  vim.keymap.set('n', '<localleader>rr', '<Cmd>MoltenReevaluateCell<CR>', { desc = 'Notebook: Re-evaluate cell', silent = true })
+  vim.keymap.set('n', '<localleader>os', '<Cmd>noautocmd MoltenEnterOutput<CR>', { desc = 'Notebook: Show output', silent = true })
+  vim.keymap.set('n', '<localleader>oh', '<Cmd>MoltenHideOutput<CR>', { desc = 'Notebook: Hide output', silent = true })
+
+  local notebook_group = vim.api.nvim_create_augroup('kickstart-notebooks', { clear = true })
+  local function import_notebook_output(event)
+    if vim.b[event.buf].molten_output_imported then return end
+    vim.b[event.buf].molten_output_imported = true
+
+    vim.schedule(function()
+      if not vim.api.nvim_buf_is_valid(event.buf) then return end
+
+      local notebook = vim.json.decode(table.concat(vim.fn.readfile(event.file), '\n'))
+      local kernel_name = vim.tbl_get(notebook, 'metadata', 'kernelspec', 'name')
+      local kernels = vim.fn.MoltenAvailableKernels()
+
+      if kernel_name and vim.tbl_contains(kernels, kernel_name) then vim.cmd.MoltenInit(kernel_name) end
+      vim.cmd.MoltenImportOutput()
+    end)
+  end
+
+  vim.api.nvim_create_autocmd('BufAdd', {
+    group = notebook_group,
+    pattern = '*.ipynb',
+    callback = import_notebook_output,
+  })
+
+  vim.api.nvim_create_autocmd('BufEnter', {
+    group = notebook_group,
+    pattern = '*.ipynb',
+    callback = function(event)
+      if vim.api.nvim_get_vvar('vim_did_enter') ~= 1 then import_notebook_output(event) end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd('BufWritePost', {
+    group = notebook_group,
+    pattern = '*.ipynb',
+    callback = function()
+      if require('molten.status').initialized() == 'Molten' then vim.cmd 'MoltenExportOutput!' end
+    end,
+  })
+end
+
+-- ============================================================
 -- SECTION 10: OPTIONAL EXAMPLES / NEXT STEPS
 -- kickstart.plugins.* examples
 -- ============================================================
@@ -1033,6 +1211,7 @@ do
   -- require 'custom.plugins.colorscheme'
   -- require 'custom.plugins.ui'
   -- require 'custom.plugins.git'
+  require 'custom.plugins.rust'
 end
 
 -- The line beneath this is called `modeline`. See `:help modeline`

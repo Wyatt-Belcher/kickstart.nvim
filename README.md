@@ -34,6 +34,14 @@ External Requirements:
   [fd-find](https://github.com/sharkdp/fd#installation)
 - [tree-sitter CLI](https://github.com/tree-sitter/tree-sitter/blob/master/crates/cli/README.md#installation)
   - `nvim-treesitter` requires version 0.26.1 or newer; with Rust installed, run `cargo install tree-sitter-cli`
+- Java support uses JDTLS and requires a JDK 21 or newer on `PATH`.
+- Rust support uses `rust-analyzer` (installed by Mason), Rustaceanvim, and crates.nvim; install Rust with [rustup](https://rustup.rs/).
+- Rust projects use Cargo check for live diagnostics and rustfmt for formatting; install rustfmt with `rustup component add rustfmt`.
+- CSV and TSV files open in an aligned, editable table view; use `<leader>cv` to toggle it.
+- Java buffers provide JDTLS shortcuts: `<leader>jo` organizes imports, `<leader>jv` extracts a variable, `<leader>jc` extracts a constant, and visual-mode `<leader>jm` extracts a method.
+- Jupyter notebook support uses the global `python3` on `PATH`; install `jupytext`, `pynvim`, `jupyter_client`, `nbformat`, and `ipykernel` there with `python3 -m pip install jupytext pynvim jupyter_client nbformat ipykernel`. You also need a Jupyter kernel for the notebook's language.
+  - Open `.ipynb` files normally; they appear as editable Markdown and convert back on save. Use `<localleader>mi` to choose a kernel, `<localleader>e` to evaluate a motion, visual-mode `<localleader>r` to evaluate a selection, `<localleader>rr` to re-run a cell, and `<localleader>os` / `<localleader>oh` to show / hide output.
+  - Molten's remote plugin registration runs automatically on install/update. Restart Neovim after its first install.
 - Clipboard tool (xclip/xsel/win32yank or other depending on the platform)
 - A [Nerd Font](https://www.nerdfonts.com/): optional, provides various icons
   - if you have it set `vim.g.have_nerd_font` in `init.lua` to true
